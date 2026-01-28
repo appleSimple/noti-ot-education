@@ -8,17 +8,10 @@
       "latest_n": 30
     },
     {
-      "name": "대한연하재활학회",
-      "url": "https://www.dysphagia.co.kr/board/bbs.php?nBBSCode=1",
-      "type": "html_key_list",
-      "key_pattern": "view.asp?Key=",
-      "latest_n": 30
-    },
-    {
       "name": "한국정신보건작업치료학회",
       "url": "http://www.kamhot.org/sub_notice/list.php",
       "type": "html_key_list",
-      "key_pattern": "sub_notice/view.php?board_name=notice",
+      "key_pattern": "sub_notice/view.php?idx=",
       "latest_n": 30
     }
   ]
