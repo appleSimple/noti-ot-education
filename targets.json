@@ -4,7 +4,7 @@
       "name": "대한인지재활학회",
       "url": "https://www.cogsociety.org/notice/list.asp",
       "type": "html_key_list",
-      "key_pattern": "view.asp?Key=",
+      "key_pattern": "notice/view.asp?Key=",
       "latest_n": 30
     },
     {
@@ -18,7 +18,7 @@
       "name": "한국정신보건작업치료학회",
       "url": "http://www.kamhot.org/sub_notice/list.php",
       "type": "html_key_list",
-      "key_pattern": "view.asp?Key=",
+      "key_pattern": "sub_notice/view.php?board_name=notice",
       "latest_n": 30
     }
   ]

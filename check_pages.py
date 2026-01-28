@@ -73,28 +73,31 @@ def normalize_url(href: str, base: str) -> str:
     return urljoin(base + "/", href)
 
 def parse_html_key_list(target_url: str, key_pattern: str, latest_n: int) -> List[Item]:
-    """
-    목록 페이지에서 key_pattern이 포함된 a[href]를 찾아 item_id(숫자/키), title, url 추출.
-    예: key_pattern="view.asp?Key=" -> view.asp?Key=12345 를 찾아 12345 추출
-    """
     r = requests.get(target_url, headers=HEADERS, timeout=25)
     r.raise_for_status()
 
-    soup = BeautifulSoup(r.text, "lxml")
+    # --- 인코딩 보정 (특히 EUC-KR/CP949 사이트 대응) ---
+    # requests가 잘못된 인코딩(ISO-8859-1) 잡는 케이스 방어
+    if not r.encoding or (r.encoding.lower() in ["iso-8859-1", "latin-1"]):
+        r.encoding = r.apparent_encoding or r.encoding
 
-    # base는 scheme+netloc만 사용(상대경로 결합)
-    u = urlparse(target_url)
-    base = f"{u.scheme}://{u.netloc}"
+    html = r.text
+    soup = BeautifulSoup(html, "lxml")
 
-    # key_pattern 뒤에 오는 값을 id로 뽑음 (숫자만이 아니어도 대응)
-    # 예: view.asp?Key=12345  또는 ...Key=abc123
+    # 최종 도착 URL 기준으로 상대경로 결합 (redirect/하위경로 안정화)
+    base_url = r.url
+
     key_re = re.compile(re.escape(key_pattern) + r"([^&#]+)", re.IGNORECASE)
 
     items_by_id: Dict[str, Item] = {}
 
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        m = key_re.search(href)
+    for a in soup.find_all("a"):
+        # href 뿐 아니라 onclick에서도 패턴을 찾는다
+        href = a.get("href") or ""
+        onclick = a.get("onclick") or ""
+
+        candidate = href + " " + onclick
+        m = key_re.search(candidate)
         if not m:
             continue
 
@@ -103,10 +106,24 @@ def parse_html_key_list(target_url: str, key_pattern: str, latest_n: int) -> Lis
         if not title:
             continue
 
-        full_url = normalize_url(href, base)
+        # 실제로 열 수 있는 URL 만들기:
+        # - href에 패턴이 있으면 href 사용
+        # - onclick에만 있으면 onclick 문자열에서 매칭된 부분 기준으로 URL을 재구성
+        if key_re.search(href):
+            full_url = urljoin(base_url, href)
+        else:
+            # onclick 안에 있는 실제 URL 조각을 최대한 뽑아내기
+            # 예: location.href='view.asp?Key=123'
+            #     window.open('view.asp?Key=123', ...)
+            url_m = re.search(r"""['"]([^'"]*""" + re.escape(key_pattern) + r"""[^'"]+)['"]""", onclick, re.IGNORECASE)
+            if url_m:
+                full_url = urljoin(base_url, url_m.group(1))
+            else:
+                # fallback: href가 # 이더라도 base_url로 때려 맞추기(거의 안 탐)
+                full_url = urljoin(base_url, href)
+
         items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
 
-    # id가 숫자면 숫자 기준으로 내림차순 정렬(최신일 가능성 높음), 아니면 문자열 정렬
     def sort_key(it: Item):
         return int(it.item_id) if it.item_id.isdigit() else it.item_id
 
@@ -114,6 +131,8 @@ def parse_html_key_list(target_url: str, key_pattern: str, latest_n: int) -> Lis
     return items[:latest_n]
 
 def run_target(target: Dict, state: Dict[str, Set[str]]):
+    print(f"[{name}] fetched={len(items)} first5={[ (it.item_id, it.title) for it in items[:5] ]}")
+    
     name = target["name"]
     url = target["url"]
     ttype = target.get("type", "html_key_list")
