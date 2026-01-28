@@ -131,8 +131,6 @@ def parse_html_key_list(target_url: str, key_pattern: str, latest_n: int) -> Lis
     return items[:latest_n]
 
 def run_target(target: Dict, state: Dict[str, Set[str]]):
-    print(f"[{name}] fetched={len(items)} first5={[ (it.item_id, it.title) for it in items[:5] ]}")
-    
     name = target["name"]
     url = target["url"]
     ttype = target.get("type", "html_key_list")
@@ -146,12 +144,14 @@ def run_target(target: Dict, state: Dict[str, Set[str]]):
     else:
         raise ValueError(f"Unsupported target type: {ttype}")
 
+    # ✅ 여기서 찍어야 정상
+    print(f"[{name}] fetched={len(items)} first5={[ (it.item_id, it.title) for it in items[:5] ]}")
+
     new_items = [it for it in items if it.item_id not in seen]
     if not new_items:
         print(f"[{name}] No new items.")
         return
 
-    # 오래된 것부터 보내고 싶으면 reverse=True/False 조정
     def sort_key(it: Item):
         return int(it.item_id) if it.item_id.isdigit() else it.item_id
 
@@ -162,7 +162,7 @@ def run_target(target: Dict, state: Dict[str, Set[str]]):
         telegram_send(msg)
         print(f"[{name}] Sent: {it.item_id} {it.title}")
         seen.add(it.item_id)
-        time.sleep(0.7)  # 텔레그램/사이트에 부담 줄이기
+        time.sleep(0.7)
 
     state[name] = seen
 
