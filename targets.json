@@ -17,6 +17,12 @@
       "url": "https://www.dysphagia.co.kr/board/bbs.php?nBBSCode=1",
       "type": "html_list_number_id",
       "latest_n": 30
+    },
+    {
+      "name": "땡큐오티",
+      "url": "https://www.thankyouot.com/board2",
+      "type": "html_list_number_id",
+      "latest_n": 30
     }
   ]
 }
