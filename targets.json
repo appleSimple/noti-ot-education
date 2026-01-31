@@ -23,6 +23,12 @@
       "url": "https://www.thankyouot.com/board2",
       "type": "html_list_number_id",
       "latest_n": 30
+    },
+    {
+      "name": "대한뇌신경재활학회",
+      "url": "https://www.ksnr.or.kr/board/list.html?code=notice",
+      "type": "html_list_number_id",
+      "latest_n": 30
     }
   ]
 }
