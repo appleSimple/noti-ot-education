@@ -46,7 +46,8 @@ def save_state(state: Dict[str, Set[str]]):
 
 def telegram_send(text: str):
     if not BOT_TOKEN or not CHAT_ID:
-        raise RuntimeError("BOT_TOKEN / CHAT_ID 환경변수가 비어 있습니다. (GitHub Secrets 확인)")
+        print(f"[텔레그램 알림 스킵 - 환경변수 없음]\n{text}")
+        return
 
     api = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -148,20 +149,121 @@ def parse_html_list_number_id(target_url: str, latest_n: int) -> List[Item]:
     items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
     return items[:latest_n]
 
+def parse_html_link_with_key(target_url: str, latest_n: int) -> List[Item]:
+    """
+    링크에서 ?Key=숫자 형태로 ID 추출
+    예: /notice/view.asp?Key=47
+    """
+    final_url, html = fetch_html(target_url)
+    soup = BeautifulSoup(html, "lxml")
+    
+    items_by_id: Dict[str, Item] = {}
+    
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        title = a.get_text(strip=True)
+        
+        if not title or len(title) < 3:
+            continue
+        
+        # ?Key=숫자 패턴 찾기
+        match = re.search(r'[?&]Key=(\d+)', href, re.IGNORECASE)
+        if match:
+            item_id = match.group(1)
+            full_url = urljoin(final_url, href)
+            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
+    
+    items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
+    return items[:latest_n]
+
+def parse_html_link_with_path_number(target_url: str, latest_n: int) -> List[Item]:
+    """
+    링크에서 경로에 숫자가 포함된 형태로 ID 추출
+    예: /board2/295
+    """
+    final_url, html = fetch_html(target_url)
+    soup = BeautifulSoup(html, "lxml")
+    
+    items_by_id: Dict[str, Item] = {}
+    
+    # target_url에서 경로 패턴 추출 (/board2 등)
+    from urllib.parse import urlparse
+    parsed = urlparse(target_url)
+    path_prefix = parsed.path.rstrip('/')
+    
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        title = a.get_text(strip=True)
+        
+        if not title or len(title) < 3:
+            continue
+        
+        # 경로/숫자 패턴 찾기
+        pattern = rf'{re.escape(path_prefix)}/(\d+)'
+        match = re.search(pattern, href)
+        if match:
+            item_id = match.group(1)
+            full_url = urljoin(final_url, href)
+            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
+    
+    items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
+    return items[:latest_n]
+
+def parse_html_link_with_num_param(target_url: str, latest_n: int) -> List[Item]:
+    """
+    링크에서 ?num=숫자 형태로 ID 추출
+    예: ?num=3043&start=0&...
+    """
+    final_url, html = fetch_html(target_url)
+    soup = BeautifulSoup(html, "lxml")
+    
+    items_by_id: Dict[str, Item] = {}
+    
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        title = a.get_text(strip=True)
+        
+        if not title or len(title) < 3:
+            continue
+        
+        # ?num=숫자 또는 &num=숫자 패턴 찾기
+        match = re.search(r'[?&]num=(\d+)', href, re.IGNORECASE)
+        if match:
+            item_id = match.group(1)
+            full_url = urljoin(final_url, href)
+            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
+    
+    items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
+    return items[:latest_n]
+
 def run_target(target: Dict, state: Dict[str, Set[str]]):
     name = str(target.get("name", "unknown"))
     url = target["url"]
     ttype = target.get("type", "html_list_number_id")
     latest_n = int(target.get("latest_n", 30))
 
-    if ttype != "html_list_number_id":
-        raise ValueError(f"Unsupported target type (only html_list_number_id): {ttype}")
-
     seen = state.get(name, set())
 
-    items = parse_html_list_number_id(url, latest_n)
+    # 타입에 맞는 파서 선택
+    if ttype == "html_list_number_id":
+        items = parse_html_list_number_id(url, latest_n)
+    elif ttype == "html_link_with_key":
+        items = parse_html_link_with_key(url, latest_n)
+    elif ttype == "html_link_with_path_number":
+        items = parse_html_link_with_path_number(url, latest_n)
+    elif ttype == "html_link_with_num_param":
+        items = parse_html_link_with_num_param(url, latest_n)
+    else:
+        raise ValueError(f"Unsupported target type: {ttype}")
 
     print(f"[{name}] fetched={len(items)} first5={[ (it.item_id, it.title) for it in items[:5] ]}")
+
+    # 크롤링은 성공했지만 글을 하나도 못 찾은 경우 경고
+    if not items:
+        warn_msg = f"⚠️ 파싱 경고 ({name})\n- 글 목록을 찾을 수 없습니다.\n- HTML 구조가 변경되었을 수 있습니다.\n- URL: {url}"
+        print(warn_msg)
+        telegram_send(warn_msg)
+        return
 
     new_items = [it for it in items if it.item_id not in seen]
     if not new_items:
@@ -194,7 +296,7 @@ def main():
         except Exception as e:
             err_msg = f"⚠️ 크롤러 오류 ({target.get('name','unknown')})\n- {type(e).__name__}: {e}"
             print(err_msg)
-            # telegram_send(err_msg)  # 필요하면 주석 해제
+            telegram_send(err_msg)
 
     save_state(state)
 

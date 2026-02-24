@@ -3,7 +3,7 @@
     {
       "name": "대한인지재활학회",
       "url": "https://www.cogsociety.org/notice/list.asp",
-      "type": "html_list_number_id",
+      "type": "html_link_with_key",
       "latest_n": 30
     },
     {
@@ -21,13 +21,13 @@
     {
       "name": "땡큐오티",
       "url": "https://www.thankyouot.com/board2",
-      "type": "html_list_number_id",
+      "type": "html_link_with_path_number",
       "latest_n": 30
     },
     {
       "name": "대한뇌신경재활학회",
       "url": "https://www.ksnr.or.kr/board/list.html?code=notice",
-      "type": "html_list_number_id",
+      "type": "html_link_with_num_param",
       "latest_n": 30
     }
   ]
