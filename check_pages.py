@@ -16,7 +16,12 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (notice-watcher; +https://github.com/)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1"
 }
 
 @dataclass
@@ -154,8 +159,32 @@ def parse_html_link_with_key(target_url: str, latest_n: int) -> List[Item]:
     링크에서 ?Key=숫자 형태로 ID 추출
     예: /notice/view.asp?Key=47
     """
-    final_url, html = fetch_html(target_url)
-    soup = BeautifulSoup(html, "lxml")
+    # 세션 사용 및 Referer 추가
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
+    # 1. 먼저 메인 페이지 방문 (쿠키 및 세션 확보)
+    from urllib.parse import urlparse
+    parsed = urlparse(target_url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    
+    try:
+        session.get(base_url, timeout=15)
+        time.sleep(0.5)
+    except Exception:
+        pass
+    
+    # 2. 실제 목록 페이지 요청
+    session.headers.update({"Referer": base_url})
+    r = session.get(target_url, timeout=25, allow_redirects=True)
+    r.raise_for_status()
+    
+    # 인코딩 보정
+    if not r.encoding or (r.encoding.lower() in ["iso-8859-1", "latin-1"]):
+        r.encoding = r.apparent_encoding or r.encoding
+    
+    final_url = r.url
+    soup = BeautifulSoup(r.text, "lxml")
     
     items_by_id: Dict[str, Item] = {}
     
@@ -170,8 +199,8 @@ def parse_html_link_with_key(target_url: str, latest_n: int) -> List[Item]:
         match = re.search(r'[?&]Key=(\d+)', href, re.IGNORECASE)
         if match:
             item_id = match.group(1)
-            full_url = urljoin(final_url, href)
-            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
+            full_url_item = urljoin(final_url, href)
+            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url_item)
     
     items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
     return items[:latest_n]
@@ -214,8 +243,32 @@ def parse_html_link_with_num_param(target_url: str, latest_n: int) -> List[Item]
     링크에서 ?num=숫자 형태로 ID 추출
     예: ?num=3043&start=0&...
     """
-    final_url, html = fetch_html(target_url)
-    soup = BeautifulSoup(html, "lxml")
+    # 세션 사용 및 Referer 추가
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
+    # 메인 페이지 방문
+    from urllib.parse import urlparse, urljoin as original_urljoin
+    parsed = urlparse(target_url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    
+    try:
+        session.get(base_url, timeout=15)
+        time.sleep(0.5)
+    except Exception:
+        pass
+    
+    # 실제 목록 페이지 요청
+    session.headers.update({"Referer": base_url})
+    r = session.get(target_url, timeout=25, allow_redirects=True)
+    r.raise_for_status()
+    
+    # 인코딩 보정
+    if not r.encoding or (r.encoding.lower() in ["iso-8859-1", "latin-1"]):
+        r.encoding = r.apparent_encoding or r.encoding
+    
+    final_url = r.url
+    soup = BeautifulSoup(r.text, "lxml")
     
     items_by_id: Dict[str, Item] = {}
     
@@ -230,8 +283,15 @@ def parse_html_link_with_num_param(target_url: str, latest_n: int) -> List[Item]
         match = re.search(r'[?&]num=(\d+)', href, re.IGNORECASE)
         if match:
             item_id = match.group(1)
-            full_url = urljoin(final_url, href)
-            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url)
+            
+            # URL 구성: ?로 시작하는 상대 경로 처리
+            if href.startswith('?'):
+                # 현재 페이지의 경로에 쿼리스트링 추가
+                full_url_item = original_urljoin(final_url.split('?')[0], href)
+            else:
+                full_url_item = original_urljoin(final_url, href)
+            
+            items_by_id[item_id] = Item(item_id=item_id, title=title, url=full_url_item)
     
     items = sorted(items_by_id.values(), key=lambda it: int(it.item_id), reverse=True)
     return items[:latest_n]
@@ -256,11 +316,11 @@ def run_target(target: Dict, state: Dict[str, Set[str]]):
     else:
         raise ValueError(f"Unsupported target type: {ttype}")
 
-    print(f"[{name}] fetched={len(items)} first5={[ (it.item_id, it.title) for it in items[:5] ]}")
+    print(f"[{name}] type={ttype} fetched={len(items)} first5={[ (it.item_id, it.title[:30]) for it in items[:5] ]}")
 
     # 크롤링은 성공했지만 글을 하나도 못 찾은 경우 경고
     if not items:
-        warn_msg = f"⚠️ 파싱 경고 ({name})\n- 글 목록을 찾을 수 없습니다.\n- HTML 구조가 변경되었을 수 있습니다.\n- URL: {url}"
+        warn_msg = f"⚠️ 파싱 경고 ({name})\n- Type: {ttype}\n- 글 목록을 찾을 수 없습니다.\n- HTML 구조가 변경되었거나 봇 차단일 수 있습니다.\n- URL: {url}"
         print(warn_msg)
         telegram_send(warn_msg)
         return

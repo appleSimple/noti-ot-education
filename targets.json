@@ -2,7 +2,7 @@
   "targets": [
     {
       "name": "대한인지재활학회",
-      "url": "https://www.cogsociety.org/notice/list.asp",
+      "url": "https://www.cogsociety.org/",
       "type": "html_link_with_key",
       "latest_n": 30
     },
